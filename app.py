@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from docx import Document
 from datetime import datetime
@@ -57,7 +57,7 @@ def generate_report():
         ("3. Profitability Analysis", "Evaluate gross margin, net margin, and profitability over time."),
         ("4. Cash Flow Insights", "Analyze inflows and outflows of cash to assess liquidity and runway."),
         ("5. Forecasting & Financial Risk", "Identify risk areas and provide projection insights."),
-        ("6. Recommendations & Financial Optimization", "Offer specific strategies to improve financial health."),
+        ("6. Recommendations & Financial Optimization", "Offer specific strategies to improve financial health. Recommendations are based on data and not intended as legal or tax advice."),
         ("Conclusion", "Wrap up the financial overview and suggest next steps for improvement.")
     ]
 
@@ -72,6 +72,10 @@ def generate_report():
     doc.save(file_path)
 
     return jsonify({'download_url': f'/static/reports/{filename}'})
+
+@app.route('/static/reports/<path:filename>')
+def download_file(filename):
+    return send_from_directory(REPORT_FOLDER, filename, as_attachment=True)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
