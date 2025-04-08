@@ -72,6 +72,45 @@ def generate_section(title, instruction, context):
                 return f"Error generating this section: {e}"
     return "Error: GPT failed after multiple attempts."
 
+def add_example_table(doc, section_title):
+    if "Expense Breakdown" in section_title:
+        table = doc.add_table(rows=1, cols=3)
+        table.style = 'Table Grid'
+        hdr_cells = table.rows[0].cells
+        hdr_cells[0].text = 'Expense Category'
+        hdr_cells[1].text = 'Monthly Total'
+        hdr_cells[2].text = 'Percentage'
+        rows = [
+            ('Payroll', '$12,000', '48%'),
+            ('Software Subscriptions', '$3,000', '12%'),
+            ('Utilities', '$1,000', '4%'),
+            ('Marketing', '$5,000', '20%'),
+            ('Other', '$4,000', '16%')
+        ]
+        for row in rows:
+            row_cells = table.add_row().cells
+            for i, val in enumerate(row):
+                row_cells[i].text = val
+        doc.add_paragraph("")  # Spacer
+    elif "Profitability Analysis" in section_title:
+        table = doc.add_table(rows=1, cols=4)
+        table.style = 'Table Grid'
+        hdr_cells = table.rows[0].cells
+        hdr_cells[0].text = 'Metric'
+        hdr_cells[1].text = 'Q1'
+        hdr_cells[2].text = 'Q2'
+        hdr_cells[3].text = 'Change'
+        rows = [
+            ('Revenue', '$120,000', '$130,000', '+8.3%'),
+            ('Gross Profit', '$45,000', '$52,000', '+15.6%'),
+            ('Net Profit', '$8,000', '$11,500', '+43.8%')
+        ]
+        for row in rows:
+            row_cells = table.add_row().cells
+            for i, val in enumerate(row):
+                row_cells[i].text = val
+        doc.add_paragraph("")  # Spacer
+
 @app.route('/')
 def home():
     return "Financial Optimization Backend is Live!"
@@ -106,6 +145,7 @@ def generate_report():
         doc.add_heading(title, level=1)
         section_text = generate_section(title, instruction, context)
         doc.add_paragraph(section_text)
+        add_example_table(doc, title)
 
     filename = f"financial_report_{datetime.now().strftime('%Y%m%d%H%M%S')}.docx"
     file_path = os.path.join(REPORT_FOLDER, filename)
