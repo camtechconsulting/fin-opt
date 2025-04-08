@@ -1,9 +1,17 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from docx import Document
+from docx import Document as DocxDocument
 from datetime import datetime
-import os
 from openai import OpenAI
+import os
+import tempfile
+import docx2txt
+import pandas as pd
+import pdfplumber
+import pptx
+from PIL import Image
+import pytesseract
+import time
 
 app = Flask(__name__)
 CORS(app, origins=["https://financial-optimization-dashboard.netlify.app"])
@@ -13,27 +21,60 @@ os.makedirs(REPORT_FOLDER, exist_ok=True)
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+def extract_text(file_storage):
+    filename = file_storage.filename.lower()
+    try:
+        if filename.endswith(".pdf"):
+            with pdfplumber.open(file_storage.stream) as pdf:
+                return "\n".join(page.extract_text() or "" for page in pdf.pages)
+        elif filename.endswith(".docx"):
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+                file_storage.save(tmp.name)
+                return docx2txt.process(tmp.name)
+        elif filename.endswith(".pptx"):
+            prs = pptx.Presentation(file_storage)
+            return "\n".join(shape.text for slide in prs.slides for shape in slide.shapes if hasattr(shape, "text"))
+        elif filename.endswith(".png") or filename.endswith(".jpg") or filename.endswith(".jpeg"):
+            image = Image.open(file_storage.stream)
+            return pytesseract.image_to_string(image)
+        elif filename.endswith(".xlsx"):
+            xls = pd.read_excel(file_storage, sheet_name=None)
+            return "\n".join(df.to_string() for df in xls.values())
+        elif filename.endswith(".csv"):
+            df = pd.read_csv(file_storage)
+            return df.to_string()
+        else:
+            return file_storage.read().decode("utf-8", errors="ignore")
+    except Exception as e:
+        return f"[Error reading {filename}: {e}]"
+
 def trim_text(text, max_chars=6000):
     return text[:max_chars]
 
 def generate_section(title, instruction, context):
     trimmed_context = trim_text(context)
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are a business financial advisor generating accurate financial analysis reports."},
-                {"role": "user", "content": f"{instruction}\n\nBusiness Context:\n{trimmed_context}"}
-            ],
-            temperature=0.7
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        return f"Error generating this section: {e}"
+    messages = [
+        {"role": "system", "content": "You are a financial advisor generating professional financial optimization reports."},
+        {"role": "user", "content": f"{instruction}\n\nBusiness Context:\n{trimmed_context}"}
+    ]
+    for _ in range(3):  # Retry up to 3 times
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4",
+                messages=messages,
+                temperature=0.7
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            if "rate limit" in str(e).lower() or "429" in str(e):
+                time.sleep(5)
+            else:
+                return f"Error generating this section: {e}"
+    return "Error: GPT failed after multiple attempts."
 
 @app.route('/')
 def home():
-    return "Financial Optimization Backend is Running!"
+    return "Financial Optimization Backend is Live!"
 
 @app.route('/generate', methods=['POST'])
 def generate_report():
@@ -42,16 +83,12 @@ def generate_report():
 
     for file in files:
         if file:
-            try:
-                content = file.read().decode("utf-8", errors="ignore")
-            except:
-                content = "Unable to read file content."
-            context += f"\n--- {file.filename} ---\n{content}\n"
+            context += extract_text(file) + "\n"
 
     if not context.strip():
         return jsonify({"error": "No valid file content found."}), 400
 
-    doc = Document()
+    doc = DocxDocument()
     doc.add_heading("Financial Metric Optimization Report", 0)
 
     sections = [
