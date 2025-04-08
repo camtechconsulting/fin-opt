@@ -1,4 +1,3 @@
-
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from docx import Document
@@ -14,28 +13,18 @@ os.makedirs(REPORT_FOLDER, exist_ok=True)
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def chunk_text(text, max_tokens=3000):
-    chunks = []
-    current = ""
-    for line in text.splitlines():
-        if len(current) + len(line) > max_tokens:
-            chunks.append(current)
-            current = line + "\n"
-        else:
-            current += line + "\n"
-    if current:
-        chunks.append(current)
-    return chunks
+def trim_text(text, max_chars=6000):
+    return text[:max_chars]
 
-def generate_section(instruction, context):
+def generate_section(title, instruction, context):
+    trimmed_context = trim_text(context)
     try:
-        chunks = chunk_text(context)
-        messages = [{"role": "system", "content": "You are a business financial advisor generating financial analysis reports."}]
-        for chunk in chunks:
-            messages.append({"role": "user", "content": f"{instruction}\n\n{chunk}"})
         response = client.chat.completions.create(
             model="gpt-4",
-            messages=messages,
+            messages=[
+                {"role": "system", "content": "You are a business financial advisor generating accurate financial analysis reports."},
+                {"role": "user", "content": f"{instruction}\n\nBusiness Context:\n{trimmed_context}"}
+            ],
             temperature=0.7
         )
         return response.choices[0].message.content.strip()
@@ -78,8 +67,8 @@ def generate_report():
 
     for title, instruction in sections:
         doc.add_heading(title, level=1)
-        result = generate_section(instruction, context)
-        doc.add_paragraph(result)
+        section_text = generate_section(title, instruction, context)
+        doc.add_paragraph(section_text)
 
     filename = f"financial_report_{datetime.now().strftime('%Y%m%d%H%M%S')}.docx"
     file_path = os.path.join(REPORT_FOLDER, filename)
