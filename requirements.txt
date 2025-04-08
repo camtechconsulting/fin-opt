@@ -9,3 +9,4 @@ pdfplumber
 pypdf2
 pandas
 docx2txt
+tiktoken

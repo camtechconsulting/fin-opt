@@ -1,3 +1,4 @@
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from docx import Document
@@ -13,29 +14,28 @@ os.makedirs(REPORT_FOLDER, exist_ok=True)
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def split_text_into_chunks(text, max_words=3000, overlap=250):
-    words = text.split()
+def chunk_text(text, max_tokens=3000):
     chunks = []
-    for i in range(0, len(words), max_words - overlap):
-        chunk = " ".join(words[i:i + max_words])
-        chunks.append(chunk)
-        if i + max_words >= len(words):
-            break
+    current = ""
+    for line in text.splitlines():
+        if len(current) + len(line) > max_tokens:
+            chunks.append(current)
+            current = line + "\n"
+        else:
+            current += line + "\n"
+    if current:
+        chunks.append(current)
     return chunks
 
-def generate_section(prompt_chunks, instruction):
-    messages = [
-        {"role": "system", "content": "You are a business financial advisor generating financial analysis reports."}
-    ]
-    for chunk in prompt_chunks:
-        messages.append({"role": "user", "content": f"{instruction}
-
-Business Context:
-{chunk}"})
+def generate_section(instruction, context):
     try:
+        chunks = chunk_text(context)
+        messages = [{"role": "system", "content": "You are a business financial advisor generating financial analysis reports."}]
+        for chunk in chunks:
+            messages.append({"role": "user", "content": f"{instruction}\n\n{chunk}"})
         response = client.chat.completions.create(
             model="gpt-4",
-            messages=messages[:3],  # Limit to 1 system + 2 user messages
+            messages=messages,
             temperature=0.7
         )
         return response.choices[0].message.content.strip()
@@ -62,8 +62,6 @@ def generate_report():
     if not context.strip():
         return jsonify({"error": "No valid file content found."}), 400
 
-    chunks = split_text_into_chunks(context)
-
     doc = Document()
     doc.add_heading("Financial Metric Optimization Report", 0)
 
@@ -80,9 +78,8 @@ def generate_report():
 
     for title, instruction in sections:
         doc.add_heading(title, level=1)
-        selected_chunks = chunks[:2]  # Use the first 2 chunks for each section
-        content = generate_section(selected_chunks, instruction)
-        doc.add_paragraph(content)
+        result = generate_section(instruction, context)
+        doc.add_paragraph(result)
 
     filename = f"financial_report_{datetime.now().strftime('%Y%m%d%H%M%S')}.docx"
     file_path = os.path.join(REPORT_FOLDER, filename)
