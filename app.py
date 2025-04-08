@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 from docx import Document
 from datetime import datetime
@@ -13,14 +13,29 @@ os.makedirs(REPORT_FOLDER, exist_ok=True)
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def generate_section(prompt):
+def split_text_into_chunks(text, max_words=3000, overlap=250):
+    words = text.split()
+    chunks = []
+    for i in range(0, len(words), max_words - overlap):
+        chunk = " ".join(words[i:i + max_words])
+        chunks.append(chunk)
+        if i + max_words >= len(words):
+            break
+    return chunks
+
+def generate_section(prompt_chunks, instruction):
+    messages = [
+        {"role": "system", "content": "You are a business financial advisor generating financial analysis reports."}
+    ]
+    for chunk in prompt_chunks:
+        messages.append({"role": "user", "content": f"{instruction}
+
+Business Context:
+{chunk}"})
     try:
         response = client.chat.completions.create(
             model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are a business financial advisor generating financial analysis reports."},
-                {"role": "user", "content": prompt}
-            ],
+            messages=messages[:3],  # Limit to 1 system + 2 user messages
             temperature=0.7
         )
         return response.choices[0].message.content.strip()
@@ -47,6 +62,8 @@ def generate_report():
     if not context.strip():
         return jsonify({"error": "No valid file content found."}), 400
 
+    chunks = split_text_into_chunks(context)
+
     doc = Document()
     doc.add_heading("Financial Metric Optimization Report", 0)
 
@@ -57,14 +74,14 @@ def generate_report():
         ("3. Profitability Analysis", "Evaluate gross margin, net margin, and profitability over time."),
         ("4. Cash Flow Insights", "Analyze inflows and outflows of cash to assess liquidity and runway."),
         ("5. Forecasting & Financial Risk", "Identify risk areas and provide projection insights."),
-        ("6. Recommendations & Financial Optimization", "Offer specific strategies to improve financial health. Recommendations are based on data and not intended as legal or tax advice."),
+        ("6. Recommendations & Financial Optimization", "Offer specific strategies to improve financial health."),
         ("Conclusion", "Wrap up the financial overview and suggest next steps for improvement.")
     ]
 
     for title, instruction in sections:
         doc.add_heading(title, level=1)
-        prompt = f"{instruction}\n\nBusiness Context:\n{context}"
-        content = generate_section(prompt)
+        selected_chunks = chunks[:2]  # Use the first 2 chunks for each section
+        content = generate_section(selected_chunks, instruction)
         doc.add_paragraph(content)
 
     filename = f"financial_report_{datetime.now().strftime('%Y%m%d%H%M%S')}.docx"
@@ -72,10 +89,6 @@ def generate_report():
     doc.save(file_path)
 
     return jsonify({'download_url': f'/static/reports/{filename}'})
-
-@app.route('/static/reports/<path:filename>')
-def download_file(filename):
-    return send_from_directory(REPORT_FOLDER, filename, as_attachment=True)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
